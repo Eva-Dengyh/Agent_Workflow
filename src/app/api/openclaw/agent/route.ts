@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { checkGatewayHealth, AGENTS, listSessions, listAgents, getGatewayStatus } from '@/lib/openclaw'
+import { checkGatewayHealth, AGENTS, listSessions, listAgents, getGatewayStatus, getDemoResponse } from '@/lib/server/openclaw'
 
 // GET /api/openclaw/agent - Get agent status, history, or gateway info
 export async function GET(request: NextRequest) {
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     const result = await listAgents()
     return NextResponse.json({
       ...result,
-      configured: AGENTS  // Include our configured agents
+      configured: AGENTS
     })
   }
   
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
   
   // Get history for specific agent type
   if (action === 'history' && agentType) {
-    const { getAgentHistory } = await import('@/lib/openclaw')
+    const { getAgentHistory } = await import('@/lib/server/openclaw')
     const result = await getAgentHistory(agentType as 'planner' | 'coder' | 'reviewer')
     return NextResponse.json(result)
   }
@@ -70,17 +70,18 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Use demo mode since HTTP API doesn't support sessions_send
-    const { sendToAgent } = await import('@/lib/openclaw')
-    
-    const result = await sendToAgent(agentType, {
-      taskId: taskId || 'general',
-      type,
-      content,
-      timestamp: new Date()
+    // Demo mode since HTTP API doesn't support sessions_send
+    return NextResponse.json({
+      success: true,
+      demo: true,
+      data: {
+        id: `msg-${Date.now()}`,
+        agentType,
+        type: 'chat',
+        content: getDemoResponse(agentType),
+        timestamp: new Date().toISOString()
+      }
     })
-    
-    return NextResponse.json(result)
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to send message', details: error instanceof Error ? error.message : 'Unknown error' },
