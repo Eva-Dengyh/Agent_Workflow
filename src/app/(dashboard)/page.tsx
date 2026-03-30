@@ -13,9 +13,9 @@ import {
   DevLog, 
   FileTree, 
   AgentChat,
-  NotificationCenter,
-  Notification
+  NotificationCenter
 } from '@/components'
+import type { Notification } from '@/components/NotificationCenter'
 
 export default function DashboardPage() {
   const { tasks, currentTask, setCurrentTask, filter, setFilter, addLog, updateProgress } = useTaskStore()
