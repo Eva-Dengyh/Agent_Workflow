@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { SSEEvent } from '@/types'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const encoder = new TextEncoder()
-  
+
   const stream = new ReadableStream({
     start(controller) {
       // Send initial connection message
@@ -13,7 +13,7 @@ export async function GET() {
         timestamp: new Date()
       }
       controller.enqueue(encoder.encode(`data: ${JSON.stringify(connectEvent)}\n\n`))
-      
+
       // Send periodic heartbeats and status updates
       const interval = setInterval(() => {
         const event: SSEEvent = {
@@ -27,7 +27,7 @@ export async function GET() {
         }
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
       }, 5000)
-      
+
       // Cleanup on close
       request.signal.addEventListener('abort', () => {
         clearInterval(interval)
@@ -35,12 +35,13 @@ export async function GET() {
       })
     }
   })
-  
+
   return new NextResponse(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-    },
+      'Access-Control-Allow-Origin': '*'
+    }
   })
 }
