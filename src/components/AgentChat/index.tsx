@@ -43,7 +43,7 @@ export function AgentChat({ agentType, agentName, messages, onSendMessage, isLoa
   }
   
   return (
-    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden flex flex-col" style={{ height: '400px' }}>
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden flex flex-col h-full">
       {/* Header */}
       <div className={clsx(
         'px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2 shrink-0',
@@ -59,7 +59,7 @@ export function AgentChat({ agentType, agentName, messages, onSendMessage, isLoa
       </div>
       
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-2">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-16 min-h-0">
         {messages.length === 0 ? (
           <div className="text-center text-gray-400 py-8">
             <p className="text-2xl mb-2">{agentAvatars[agentType]}</p>
