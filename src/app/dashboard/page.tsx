@@ -38,6 +38,14 @@ export default function DashboardPage() {
   const [newTaskRequirement, setNewTaskRequirement] = useState('')
   const [isCreatingTask, setIsCreatingTask] = useState(false)
   
+  // Agent selector for chat - allow user to choose which agent to talk to
+  const [selectedChatAgent, setSelectedChatAgent] = useState<'planner' | 'coder' | 'reviewer'>('planner')
+  const agentLabels = {
+    planner: { name: 'Planner', emoji: '📋', color: 'text-blue-500' },
+    coder: { name: 'Coder', emoji: '💻', color: 'text-emerald-500' },
+    reviewer: { name: 'Reviewer', emoji: '🔍', color: 'text-amber-500' }
+  }
+  
   // OpenClaw integration
   const { sendMessage } = useOpenClaw({ autoConnect: false })
   
@@ -173,13 +181,13 @@ export default function DashboardPage() {
       [currentTask.id]: [...(prev[currentTask.id] || []), userMsg]
     }))
     
-    // Send to OpenClaw Agent
+    // Send to OpenClaw Agent (using selected agent)
     try {
       const result = await fetch('/api/openclaw/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          agentType: 'planner',
+          agentType: selectedChatAgent,
           taskId: currentTask.id,
           content,
           type: 'chat'
@@ -502,13 +510,42 @@ export default function DashboardPage() {
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-6">
                   {activeTab === 'chat' && (
-                    <AgentChat
-                      agentType="planner"
-                      agentName="Planner"
-                      messages={messages[currentTask.id] || []}
-                      onSendMessage={handleSendMessage}
-                      isLoading={isLoading}
-                    />
+                    <div className="space-y-4">
+                      {/* Agent Selector */}
+                      <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                        <span className="text-sm text-gray-500">选择 Agent：</span>
+                        <div className="flex gap-2">
+                          {(Object.keys(agentLabels) as Array<'planner' | 'coder' | 'reviewer'>).map((agent) => {
+                            const info = agentLabels[agent]
+                            return (
+                              <button
+                                key={agent}
+                                onClick={() => setSelectedChatAgent(agent)}
+                                className={clsx(
+                                  'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+                                  selectedChatAgent === agent
+                                    ? agent === 'planner' ? 'bg-blue-500 text-white shadow-md' :
+                                      agent === 'coder' ? 'bg-emerald-500 text-white shadow-md' :
+                                      'bg-amber-500 text-white shadow-md'
+                                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
+                                )}
+                              >
+                                <span>{info.emoji}</span>
+                                <span>{info.name}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      
+                      <AgentChat
+                        agentType={selectedChatAgent}
+                        agentName={agentLabels[selectedChatAgent].name}
+                        messages={messages[currentTask.id] || []}
+                        onSendMessage={handleSendMessage}
+                        isLoading={isLoading}
+                      />
+                    </div>
                   )}
                   
                   {activeTab === 'code' && (
