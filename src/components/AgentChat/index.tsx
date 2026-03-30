@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { clsx } from 'clsx'
 import { AgentMessage, AgentType } from '@/types'
 import { format } from 'date-fns'
@@ -27,6 +27,12 @@ const agentAvatars: Record<AgentType, string> = {
 
 export function AgentChat({ agentType, agentName, messages, onSendMessage, isLoading }: AgentChatProps) {
   const [input, setInput] = useState('')
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -40,7 +46,7 @@ export function AgentChat({ agentType, agentName, messages, onSendMessage, isLoa
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden flex flex-col" style={{ height: '400px' }}>
       {/* Header */}
       <div className={clsx(
-        'px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2',
+        'px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2 shrink-0',
         agentColors[agentType]
       )}>
         <span className="text-xl">{agentAvatars[agentType]}</span>
@@ -53,7 +59,7 @@ export function AgentChat({ agentType, agentName, messages, onSendMessage, isLoa
       </div>
       
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-2">
         {messages.length === 0 ? (
           <div className="text-center text-gray-400 py-8">
             <p className="text-2xl mb-2">{agentAvatars[agentType]}</p>
@@ -109,10 +115,13 @@ export function AgentChat({ agentType, agentName, messages, onSendMessage, isLoa
             </div>
           </div>
         )}
+        
+        {/* Scroll anchor - always at bottom */}
+        <div ref={messagesEndRef} />
       </div>
       
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-3 border-t border-gray-200 dark:border-gray-700">
+      <form onSubmit={handleSubmit} className="p-3 border-t border-gray-200 dark:border-gray-700 shrink-0">
         <div className="flex gap-2">
           <input
             type="text"

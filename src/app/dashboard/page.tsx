@@ -24,9 +24,9 @@ export default function DashboardPage() {
   const { agents } = useAgentStore()
   const { connected, setConnected } = useSSEStore()
   
-  // Local state for demo
+  // Local state for demo - messages keyed by taskId + agentType for proper isolation
   const [logs, setLogs] = useState<Log[]>([])
-  const [messages, setMessages] = useState<Record<string, AgentMessage[]>>({})
+  const [messages, setMessages] = useState<Record<string, Record<string, AgentMessage[]>>>({})
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -178,7 +178,10 @@ export default function DashboardPage() {
     
     setMessages(prev => ({
       ...prev,
-      [currentTask.id]: [...(prev[currentTask.id] || []), userMsg]
+      [currentTask.id]: {
+        ...prev[currentTask.id],
+        [selectedChatAgent]: [...(prev[currentTask.id]?.[selectedChatAgent] || []), userMsg]
+      }
     }))
     
     // Send to OpenClaw Agent (using selected agent)
@@ -218,7 +221,10 @@ export default function DashboardPage() {
         
         setMessages(prev => ({
           ...prev,
-          [currentTask.id]: [...(prev[currentTask.id] || []), agentMsg]
+          [currentTask.id]: {
+            ...prev[currentTask.id],
+            [selectedChatAgent]: [...(prev[currentTask.id]?.[selectedChatAgent] || []), agentMsg]
+          }
         }))
         
         // Add demo mode indicator (only if in demo mode, not real agent)
@@ -236,7 +242,10 @@ export default function DashboardPage() {
         }
         setMessages(prev => ({
           ...prev,
-          [currentTask.id]: [...(prev[currentTask.id] || []), errorMsg]
+          [currentTask.id]: {
+            ...prev[currentTask.id],
+            [selectedChatAgent]: [...(prev[currentTask.id]?.[selectedChatAgent] || []), errorMsg]
+          }
         }))
       }
     } catch (error) {
@@ -250,7 +259,10 @@ export default function DashboardPage() {
       }
       setMessages(prev => ({
         ...prev,
-        [currentTask.id]: [...(prev[currentTask.id] || []), errorMsg]
+        [currentTask.id]: {
+          ...prev[currentTask.id],
+          [selectedChatAgent]: [...(prev[currentTask.id]?.[selectedChatAgent] || []), errorMsg]
+        }
       }))
     } finally {
       setIsLoading(false)
@@ -482,7 +494,7 @@ export default function DashboardPage() {
               {/* Tabs */}
               <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-700">
                 {[
-                  { key: 'chat', label: '💬 Agent 对话', count: messages[currentTask.id]?.length || 0 },
+                  { key: 'chat', label: '💬 Agent 对话', count: messages[currentTask.id]?.[selectedChatAgent]?.length || 0 },
                   { key: 'code', label: '📁 文件结构', count: 0 },
                   { key: 'review', label: '🔍 审查反馈', count: currentTask.reviewIssues.filter(i => !i.fixed).length }
                 ].map(tab => (
@@ -541,7 +553,7 @@ export default function DashboardPage() {
                       <AgentChat
                         agentType={selectedChatAgent}
                         agentName={agentLabels[selectedChatAgent].name}
-                        messages={messages[currentTask.id] || []}
+                        messages={messages[currentTask.id]?.[selectedChatAgent] || []}
                         onSendMessage={handleSendMessage}
                         isLoading={isLoading}
                       />
