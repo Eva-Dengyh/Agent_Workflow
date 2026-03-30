@@ -38,8 +38,6 @@ export async function sendToAgentViaOpenAI(
     const request: ChatCompletionRequest = {
       model: `openclaw:${agentId}`,
       messages: [
-        // System prompt to define agent identity
-        { role: 'system', content: getSystemPrompt(agentId) },
         { role: 'user', content: message }
       ],
       max_tokens: options.maxTokens || 2000,
@@ -121,11 +119,7 @@ export async function sendToAgent(
   }
 
   const agentId = AGENT_IDS[agentType]
-  // Add identity reminder in the message itself
-  const identityReminder = getIdentityReminder(agentType)
-  const fullMessage = taskId 
-    ? `[Task: ${taskId}]\n\n${identityReminder}\n\n用户消息: ${message}`
-    : `${identityReminder}\n\n用户消息: ${message}`
+  const fullMessage = taskId ? `[Task: ${taskId}]\n\n${message}` : message
   const model = modelMap[agentType]
 
   try {
@@ -174,26 +168,6 @@ function getDemoResponse(agentType: string): string {
     reviewer: '你好！我是 Reviewer。我收到你的消息了。可以提交代码给我审查。'
   }
   return responses[agentType] || '消息已收到'
-}
-
-// Identity reminder prefix for each agent
-function getIdentityReminder(agentType: 'planner' | 'coder' | 'reviewer'): string {
-  const reminders: Record<string, string> = {
-    planner: '【重要】你是 Planner，不是 Coder也不是 Reviewer。你的名字是Planner。你的职责是分析需求和制定计划。回答时必须说"我是Planner"。',
-    coder: '【重要】你是 Coder，不是 Planner也不是 Reviewer。你的名字是Coder。你的职责是写代码和实现功能。回答时必须说"我是Coder"。',
-    reviewer: '【重要】你是 Reviewer，不是 Planner也不是 Coder。你的名字是Reviewer。你的职责是审查代码和测试。回答时必须说"我是Reviewer"。'
-  }
-  return reminders[agentType]
-}
-
-// System prompts to ensure agents respond as their correct identity
-function getSystemPrompt(agentId: string): string {
-  const prompts: Record<string, string> = {
-    planner_code_agent_bot: '你是 Planner，规划师。你的名字是 Planner，你专门分析需求、制定开发计划、协调多Agent工作流程。回答时先说"我是 Planner"。',
-    coder_code_agent_bot: '你是 Coder，程序员。你的名字是 Coder，你专门编写代码、实现功能、修复bug。回答时先说"我是 Coder"。',
-    reviewer_code_agent_bot: '你是 Reviewer，审查员。你的名字是 Reviewer，你专门代码审查、测试验收、检查代码质量。回答时先说"我是 Reviewer"。'
-  }
-  return prompts[agentId] || '你是一个 AI 助手。回答时要说明你的名字。'
 }
 
 /**
