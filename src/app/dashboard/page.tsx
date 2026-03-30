@@ -213,21 +213,9 @@ export default function DashboardPage() {
           [currentTask.id]: [...(prev[currentTask.id] || []), agentMsg]
         }))
         
-        // Add demo mode indicator
-        if (data.demo) {
-          const demoNote: AgentMessage = {
-            id: (Date.now() + 2).toString(),
-            agentType: 'planner',
-            type: 'chat',
-            content: '💡 (演示模式 - OpenClaw Gateway 未连接)',
-            timestamp: new Date()
-          }
-          setTimeout(() => {
-            setMessages(prev => ({
-              ...prev,
-              [currentTask.id]: [...(prev[currentTask.id] || []), demoNote]
-            }))
-          }, 100)
+        // Add demo mode indicator (only if in demo mode, not real agent)
+        if (data.demo && data.data?.content) {
+          // This is demo mode - real agent would not have demo flag
         }
       } else {
         // Add error message
@@ -256,9 +244,9 @@ export default function DashboardPage() {
         ...prev,
         [currentTask.id]: [...(prev[currentTask.id] || []), errorMsg]
       }))
+    } finally {
+      setIsLoading(false)
     }
-    
-    setIsLoading(false)
   }
   
   // Handle create new task

@@ -1,24 +1,25 @@
-// Server-side: Use /hooks/agent to send messages to OpenClaw agents
-// This endpoint bypasses the sessions_send restriction
+// Server-side: Use OpenAI-compatible /v1/chat/completions API to send messages to OpenClaw agents
+// This is the recommended approach for agent communication
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { GATEWAY_URL, GATEWAY_TOKEN } from '@/lib/server/openclaw'
 
-interface HookAgentRequest {
-  message: string
-  agentId?: string
-  sessionKey?: string
-  model?: string
-  thinking?: boolean
-  timeoutSeconds?: number
+interface ChatCompletionRequest {
+  model: string // Format: openclaw:<agentId>
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
+  max_tokens?: number
+  temperature?: number
 }
 
 /**
- * Send a message to an agent via Gateway hooks API
- * This uses POST /hooks/agent which is designed for agent communication
+ * Send a message to an agent via OpenAI-compatible API
+ * Uses POST /v1/chat/completions endpoint
+ * NOTE: This endpoint requires longer timeout (10+ seconds) as it invokes real AI agent
  */
-export async function sendToAgentViaHook(
-  request: HookAgentRequest
+export async function sendToAgentViaOpenAI(
+  agentId: string,
+  message: string,
+  options: { maxTokens?: number; temperature?: number; timeoutMs?: number } = {}
 ): Promise<{
   success: boolean
   response?: string
@@ -28,44 +29,61 @@ export async function sendToAgentViaHook(
     return { success: false, error: 'Gateway token not available' }
   }
 
+  const timeoutMs = options.timeoutMs || 30000 // Default 30 second timeout for AI response
+
   try {
-    const response = await fetch(`${GATEWAY_URL}/hooks/agent`, {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+    const request: ChatCompletionRequest = {
+      model: `openclaw:${agentId}`,
+      messages: [
+        { role: 'user', content: message }
+      ],
+      max_tokens: options.maxTokens || 2000,
+      temperature: options.temperature || 0.7
+    }
+
+    const response = await fetch(`${GATEWAY_URL}/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${GATEWAY_TOKEN}`
       },
-      body: JSON.stringify({
-        message: request.message,
-        agentId: request.agentId,
-        sessionKey: request.sessionKey,
-        model: request.model,
-        thinking: request.thinking ?? false,
-        timeoutSeconds: request.timeoutSeconds ?? 60,
-        deliver: false, // Don't send reply to channel, return here
-        wakeMode: 'dedicated' // Use dedicated session for this request
-      })
+      body: JSON.stringify(request),
+      signal: controller.signal
     })
+
+    clearTimeout(timeoutId)
 
     if (!response.ok) {
       const errorText = await response.text()
-      return { 
-        success: false, 
-        error: `Hook failed (${response.status}): ${errorText}` 
+      return {
+        success: false,
+        error: `OpenAI API failed (${response.status}): ${errorText}`
       }
     }
 
-    // Response is the agent's reply text
-    const responseText = await response.text()
-    
-    return { 
-      success: true, 
-      response: responseText 
+    const data = await response.json()
+
+    // Extract response from OpenAI format
+    const content = data.choices?.[0]?.message?.content
+
+    if (!content) {
+      return { success: false, error: 'No response content from agent' }
+    }
+
+    return {
+      success: true,
+      response: content
     }
   } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Connection failed' 
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { success: false, error: `Request timed out after ${timeoutMs}ms` }
+    }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Connection failed'
     }
   }
 }
@@ -86,35 +104,39 @@ export async function sendToAgent(
   error?: string
   demo?: boolean
 }> {
-  // Agent IDs from environment
+  // Agent IDs from environment - use EXACT IDs
   const AGENT_IDS = {
     planner: process.env.PLANNER_AGENT_ID || 'planner_code_agent_bot',
     coder: process.env.CODER_AGENT_ID || 'coder_code_agent_bot',
     reviewer: process.env.REVIEWER_AGENT_ID || 'reviewer_code_agent_bot'
   }
 
+  // Model format: openclaw:<exact-agent-id>
+  const modelMap = {
+    planner: 'openclaw:planner_code_agent_bot',
+    coder: 'openclaw:coder_code_agent_bot',
+    reviewer: 'openclaw:reviewer_code_agent_bot'
+  }
+
   const agentId = AGENT_IDS[agentType]
-  const sessionKey = `agent:${agentType}:${agentId}`
+  const fullMessage = taskId ? `[Task: ${taskId}]\n\n${message}` : message
+  const model = modelMap[agentType]
 
   try {
-    const result = await sendToAgentViaHook({
-      message: `[Task: ${taskId || 'general'}] ${message}`,
-      agentId,
-      sessionKey,
-      timeoutSeconds: 120
-    })
+    const result = await sendToAgentViaOpenAI(model, fullMessage)
 
-    if (result.success) {
+    if (result.success && result.response) {
       return {
         success: true,
         demo: false,
         data: {
-          content: result.response || '消息已处理',
+          content: result.response,
           timestamp: new Date().toISOString()
         }
       }
     } else {
-      // Fall back to demo mode if hook fails
+      console.error(`[OpenClaw] Agent ${agentType} failed:`, result.error)
+
       return {
         success: true,
         demo: true,
@@ -125,7 +147,8 @@ export async function sendToAgent(
       }
     }
   } catch (error) {
-    // Fall back to demo mode
+    console.error(`[OpenClaw] Agent ${agentType} error:`, error)
+
     return {
       success: true,
       demo: true,
@@ -145,4 +168,31 @@ function getDemoResponse(agentType: string): string {
     reviewer: '你好！我是 Reviewer。我收到你的消息了。可以提交代码给我审查。'
   }
   return responses[agentType] || '消息已收到'
+}
+
+/**
+ * Check if the /v1/chat/completions endpoint is enabled
+ */
+export async function checkOpenAIEndpoint(): Promise<boolean> {
+  if (!GATEWAY_TOKEN) return false
+
+  try {
+    const response = await fetch(`${GATEWAY_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GATEWAY_TOKEN}`
+      },
+      body: JSON.stringify({
+        model: 'openclaw:main',
+        messages: [{ role: 'user', content: 'test' }],
+        max_tokens: 1
+      })
+    })
+
+    // 401 means endpoint exists but auth works, 404 means not enabled
+    return response.status !== 404
+  } catch {
+    return false
+  }
 }
