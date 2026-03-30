@@ -17,6 +17,7 @@ import {
 } from '@/components'
 import type { Notification } from '@/components/NotificationCenter'
 import { clsx } from 'clsx'
+import { useOpenClaw } from '@/lib/useOpenClaw'
 
 export default function DashboardPage() {
   const { tasks, currentTask, setCurrentTask, filter, setFilter, addLog, updateProgress } = useTaskStore()
@@ -30,6 +31,15 @@ export default function DashboardPage() {
   const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<'chat' | 'code' | 'review'>('chat')
+  
+  // New task creation state
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [newTaskRequirement, setNewTaskRequirement] = useState('')
+  const [isCreatingTask, setIsCreatingTask] = useState(false)
+  
+  // OpenClaw integration
+  const { sendMessage } = useOpenClaw({ autoConnect: false })
   
   // Mock data for demo - use ref to prevent duplicate additions
   const [isInitialized, setIsInitialized] = useState(false)
@@ -143,7 +153,7 @@ export default function DashboardPage() {
     return true
   })
   
-  // Handle send message
+  // Handle send message - real OpenClaw integration
   const handleSendMessage = async (content: string) => {
     if (!currentTask) return
     
@@ -163,22 +173,148 @@ export default function DashboardPage() {
       [currentTask.id]: [...(prev[currentTask.id] || []), userMsg]
     }))
     
-    // Simulate agent response
-    setTimeout(() => {
-      const agentMsg: AgentMessage = {
+    // Send to OpenClaw Agent
+    try {
+      const result = await fetch('/api/openclaw/agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentType: 'planner',
+          taskId: currentTask.id,
+          content,
+          type: 'chat'
+        })
+      })
+      
+      const data = await result.json()
+      
+      // Add agent response if available
+      if (data.success && data.data) {
+        const agentMsg: AgentMessage = {
+          id: (Date.now() + 1).toString(),
+          agentType: 'planner',
+          type: 'chat',
+          content: typeof data.data === 'string' ? data.data : JSON.stringify(data.data),
+          timestamp: new Date()
+        }
+        
+        setMessages(prev => ({
+          ...prev,
+          [currentTask.id]: [...(prev[currentTask.id] || []), agentMsg]
+        }))
+      } else {
+        // Add error message
+        const errorMsg: AgentMessage = {
+          id: (Date.now() + 1).toString(),
+          agentType: 'planner',
+          type: 'chat',
+          content: `⚠️ 发送失败: ${data.error || '未知错误'}。请确保 OpenClaw Gateway 正在运行。`,
+          timestamp: new Date()
+        }
+        setMessages(prev => ({
+          ...prev,
+          [currentTask.id]: [...(prev[currentTask.id] || []), errorMsg]
+        }))
+      }
+    } catch (error) {
+      // Add error message
+      const errorMsg: AgentMessage = {
         id: (Date.now() + 1).toString(),
         agentType: 'planner',
         type: 'chat',
-        content: '收到，我会处理这个问题。',
+        content: `⚠️ 网络错误: ${error instanceof Error ? error.message : '无法连接到服务器'}`,
         timestamp: new Date()
       }
-      
       setMessages(prev => ({
         ...prev,
-        [currentTask.id]: [...(prev[currentTask.id] || []), agentMsg]
+        [currentTask.id]: [...(prev[currentTask.id] || []), errorMsg]
       }))
-      setIsLoading(false)
-    }, 1500)
+    }
+    
+    setIsLoading(false)
+  }
+  
+  // Handle create new task
+  const handleCreateTask = async () => {
+    if (!newTaskTitle.trim() || !newTaskRequirement.trim()) return
+    
+    setIsCreatingTask(true)
+    
+    try {
+      const result = await fetch('/api/openclaw/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          title: newTaskTitle,
+          requirement: newTaskRequirement
+        })
+      })
+      
+      const data = await result.json()
+      
+      if (data.success) {
+        // Create local task
+        const newTask: Task = {
+          id: data.data?.taskId || `TASK-${Date.now()}`,
+          title: newTaskTitle,
+          status: 'planning',
+          priority: 'medium',
+          requirement: newTaskRequirement,
+          progress: 0,
+          currentModule: '等待 Planner 分析',
+          logs: [{
+            timestamp: new Date(),
+            level: 'info',
+            message: '任务已创建，等待 Planner 分析',
+            source: 'system'
+          }],
+          reviewIssues: [],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+        
+        useTaskStore.getState().addTask(newTask)
+        setCurrentTask(newTask)
+        
+        // Reset form
+        setShowCreateModal(false)
+        setNewTaskTitle('')
+        setNewTaskRequirement('')
+        
+        // Add notification
+        setNotifications(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'success',
+          title: '任务已创建',
+          message: `任务 "${newTaskTitle}" 已发送给 Planner`,
+          timestamp: new Date(),
+          read: false
+        }])
+      } else {
+        // Use in-app notification instead of browser alert
+        setNotifications(prev => [...prev, {
+          id: Date.now().toString(),
+          type: 'error',
+          title: '创建失败',
+          message: data.error || '请检查 OpenClaw Gateway 连接',
+          timestamp: new Date(),
+          read: false
+        }])
+      }
+    } catch (error) {
+      // Use in-app notification instead of browser alert
+      setNotifications(prev => [...prev, {
+        id: Date.now().toString(),
+        type: 'error',
+        title: '创建失败',
+        message: error instanceof Error ? error.message : '未知错误',
+        timestamp: new Date(),
+        read: false
+      }])
+    }
+    
+    setIsCreatingTask(false)
   }
   
   // Handle mark notification as read
@@ -263,6 +399,15 @@ export default function DashboardPage() {
         {/* Left sidebar - Task list */}
         <aside className="w-80 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-y-auto">
           <div className="p-4">
+            {/* Create Task button */}
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="w-full mb-4 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2 font-medium"
+            >
+              <span className="text-lg">+</span>
+              新建任务
+            </button>
+            
             {/* Filter tabs */}
             <div className="flex gap-2 mb-4">
               {(['all', 'active', 'completed'] as const).map(f => (
@@ -406,6 +551,60 @@ export default function DashboardPage() {
           )}
         </main>
       </div>
+      
+      {/* Create Task Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowCreateModal(false)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4 shadow-xl">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">创建新任务</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  任务名称
+                </label>
+                <input
+                  type="text"
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  placeholder="例如：用户登录功能"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  需求描述
+                </label>
+                <textarea
+                  value={newTaskRequirement}
+                  onChange={(e) => setNewTaskRequirement(e.target.value)}
+                  placeholder="详细描述你的需求..."
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                />
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleCreateTask}
+                disabled={!newTaskTitle.trim() || !newTaskRequirement.trim() || isCreatingTask}
+                className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isCreatingTask ? '创建中...' : '创建'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -72,14 +72,16 @@ export async function sendToAgent(
       })
     })
 
+    // Handle non-OK responses gracefully (404, etc.)
     if (!response.ok) {
-      const error = await response.text()
-      return { success: false, error: `Gateway error: ${error}` }
+      const errorText = await response.text().catch(() => 'Unknown error')
+      return { success: false, error: `Gateway error ${response.status}: ${errorText}` }
     }
 
     const data = await response.json()
     return { success: true, data }
   } catch (error) {
+    // Don't throw, return error object for graceful handling
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to connect to gateway' 
@@ -146,12 +148,19 @@ export async function listSessions(): Promise<AgentResponse> {
  */
 export async function checkGatewayHealth(): Promise<boolean> {
   try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 3000)
+    
     const response = await fetch(`${GATEWAY_URL}/api/health`, {
       method: 'GET',
-      signal: AbortSignal.timeout(3000)
+      signal: controller.signal
     })
+    
+    clearTimeout(timeoutId)
     return response.ok
   } catch {
+    // Gateway is not available - this is fine for demo mode
+    console.warn('OpenClaw Gateway health check failed, running in demo mode')
     return false
   }
 }
