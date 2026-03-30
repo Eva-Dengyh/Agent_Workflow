@@ -1,11 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sendToAgent, getAgentHistory, listSessions, checkGatewayHealth, AGENTS } from '@/lib/openclaw'
+import { checkGatewayHealth, AGENTS, listSessions, listAgents, getGatewayStatus } from '@/lib/openclaw'
 
-// Demo mode responses when Gateway is unavailable
-const DEMO_RESPONSES: Record<string, string> = {
-  planner: '你好！我是 Planner。我收到你的消息了。有什么需求可以告诉我，我会帮你分析和规划任务。',
-  coder: '你好！我是 Coder。我收到你的消息了。准备好开始开发了。',
-  reviewer: '你好！我是 Reviewer。我收到你的消息了。可以提交代码给我审查。'
+// GET /api/openclaw/agent - Get agent status, history, or gateway info
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const action = searchParams.get('action')
+  const agentType = searchParams.get('agentType')
+  
+  // Health check
+  if (action === 'health') {
+    const isHealthy = await checkGatewayHealth()
+    return NextResponse.json({ healthy: isHealthy })
+  }
+  
+  // Get gateway status (includes connection info)
+  if (action === 'status') {
+    const status = await getGatewayStatus()
+    return NextResponse.json(status)
+  }
+  
+  // List agents (via Gateway tool)
+  if (action === 'list') {
+    const result = await listAgents()
+    return NextResponse.json({
+      ...result,
+      configured: AGENTS  // Include our configured agents
+    })
+  }
+  
+  // Get sessions
+  if (action === 'sessions') {
+    const result = await listSessions()
+    return NextResponse.json(result)
+  }
+  
+  // Get history for specific agent type
+  if (action === 'history' && agentType) {
+    const { getAgentHistory } = await import('@/lib/openclaw')
+    const result = await getAgentHistory(agentType as 'planner' | 'coder' | 'reviewer')
+    return NextResponse.json(result)
+  }
+  
+  // Default: show all agents with their status
+  const status = await getGatewayStatus()
+  return NextResponse.json({
+    gateway: status,
+    agents: AGENTS,
+    message: 'Use ?action=health|status|list|sessions|history to query specific info'
+  })
 }
 
 // POST /api/openclaw/agent - Send message to an agent
@@ -28,27 +70,8 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Check if gateway is available
-    const gatewayAvailable = await checkGatewayHealth()
-    
-    if (!gatewayAvailable) {
-      // Demo mode: simulate agent response
-      console.warn('OpenClaw Gateway not available, using demo mode for agent chat')
-      
-      const demoResponse = DEMO_RESPONSES[agentType] || '消息已收到'
-      
-      return NextResponse.json({
-        success: true,
-        data: {
-          id: `msg-${Date.now()}`,
-          agentType,
-          type: 'chat',
-          content: demoResponse,
-          timestamp: new Date().toISOString()
-        },
-        demo: true
-      })
-    }
+    // Use demo mode since HTTP API doesn't support sessions_send
+    const { sendToAgent } = await import('@/lib/openclaw')
     
     const result = await sendToAgent(agentType, {
       taskId: taskId || 'general',
@@ -64,39 +87,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
-
-// GET /api/openclaw/agent - Get agent status or history
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const action = searchParams.get('action')
-  const agentType = searchParams.get('agentType')
-  
-  // Health check
-  if (action === 'health') {
-    const isHealthy = await checkGatewayHealth()
-    return NextResponse.json({ healthy: isHealthy })
-  }
-  
-  // List agents
-  if (action === 'list') {
-    return NextResponse.json({ agents: AGENTS })
-  }
-  
-  // Get history
-  if (action === 'history' && agentType) {
-    const result = await getAgentHistory(agentType as 'planner' | 'coder' | 'reviewer')
-    return NextResponse.json(result)
-  }
-  
-  // List sessions
-  if (action === 'sessions') {
-    const result = await listSessions()
-    return NextResponse.json(result)
-  }
-  
-  return NextResponse.json(
-    { error: 'Invalid action. Use: health, list, history, or sessions' },
-    { status: 400 }
-  )
 }

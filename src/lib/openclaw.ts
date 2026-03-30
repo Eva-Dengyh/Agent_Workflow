@@ -1,7 +1,22 @@
 // OpenClaw Agent Communication Client
-// This module handles communication with OpenClaw agents via the Gateway API
+// Uses Gateway HTTP API: POST /tools/invoke
+
+import fs from 'fs'
+import path from 'path'
+
+// Load gateway token from openclaw config
+function getGatewayToken(): string | null {
+  try {
+    const configPath = path.join(process.env.HOME || '/Users/eva', '.openclaw/openclaw.json')
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+    return config.auth?.token || null
+  } catch {
+    return process.env.OPENCLAW_GATEWAY_TOKEN || null
+  }
+}
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:18789'
+const GATEWAY_TOKEN = getGatewayToken()
 
 export interface AgentConfig {
   agentId: string
@@ -37,109 +52,149 @@ export interface TaskMessage {
 
 export interface AgentResponse {
   success: boolean
-  message?: string
   data?: unknown
   error?: string
+  demo?: boolean
+}
+
+interface ToolResult {
+  ok: boolean
+  result?: {
+    content?: Array<{ type: string; text: string }>
+    details?: unknown
+  }
+  error?: {
+    type: string
+    message: string
+  }
+}
+
+// Invoke a tool via Gateway HTTP API
+async function invokeTool(tool: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
+  if (!GATEWAY_TOKEN) {
+    return { ok: false, error: { type: 'no_token', message: 'Gateway token not found' } }
+  }
+
+  try {
+    const response = await fetch(`${GATEWAY_URL}/tools/invoke`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GATEWAY_TOKEN}`
+      },
+      body: JSON.stringify({
+        tool,
+        action: 'json',
+        args
+      })
+    })
+
+    return await response.json()
+  } catch (error) {
+    return { 
+      ok: false, 
+      error: { type: 'network', message: error instanceof Error ? error.message : 'Connection failed' } 
+    }
+  }
+}
+
+// Demo mode responses
+const DEMO_RESPONSES: Record<string, string> = {
+  planner: '你好！我是 Planner。我收到你的消息了。有什么需求可以告诉我，我会帮你分析和规划任务。',
+  coder: '你好！我是 Coder。我收到你的消息了。准备好开始开发了。',
+  reviewer: '你好！我是 Reviewer。我收到你的消息了。可以提交代码给我审查。'
 }
 
 /**
- * Send a message to a specific agent via OpenClaw Gateway
+ * Send a message to a specific agent
+ * Note: Gateway HTTP API doesn't support sessions_send (blocked for security)
+ * This uses demo mode for Agent communication
  */
 export async function sendToAgent(
   agentType: 'planner' | 'coder' | 'reviewer',
   message: TaskMessage,
   sessionKey?: string
 ): Promise<AgentResponse> {
-  const agent = AGENTS[agentType]
-  if (!agent) {
-    return { success: false, error: `Unknown agent type: ${agentType}` }
-  }
-
-  try {
-    const response = await fetch(`${GATEWAY_URL}/api/sessions/send`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Agent-Id': agent.agentId,
-        ...(sessionKey && { 'X-Session-Key': sessionKey })
-      },
-      body: JSON.stringify({
-        agentId: agent.agentId,
-        message: {
-          ...message,
-          timestamp: message.timestamp.toISOString()
-        }
-      })
-    })
-
-    // Handle non-OK responses gracefully (404, etc.)
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error')
-      return { success: false, error: `Gateway error ${response.status}: ${errorText}` }
-    }
-
-    const data = await response.json()
-    return { success: true, data }
-  } catch (error) {
-    // Don't throw, return error object for graceful handling
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Failed to connect to gateway' 
+  // Note: sessions_send is blocked via HTTP API
+  // For real agent communication, the frontend would need to use the WebSocket protocol
+  // or the message would go through the agent's existing session
+  
+  console.warn(`[OpenClaw] sendToAgent called for ${agentType} (HTTP API doesn't support sessions_send)`)
+  
+  // Fall back to demo mode
+  return {
+    success: true,
+    demo: true,
+    data: {
+      content: DEMO_RESPONSES[agentType] || '消息已收到',
+      timestamp: new Date().toISOString()
     }
   }
 }
 
 /**
- * Get conversation history with a specific agent
+ * Get list of active sessions
+ */
+export async function listSessions(): Promise<AgentResponse> {
+  const result = await invokeTool('sessions_list', {})
+  
+  if (!result.ok) {
+    return { success: false, error: result.error?.message || 'Failed to list sessions' }
+  }
+  
+  try {
+    const text = result.result?.content?.[0]?.text || '{}'
+    const data = JSON.parse(text)
+    return { success: true, data: data.sessions || [] }
+  } catch {
+    return { success: false, error: 'Failed to parse sessions response' }
+  }
+}
+
+/**
+ * Get conversation history with a specific agent session
  */
 export async function getAgentHistory(
   agentType: 'planner' | 'coder' | 'reviewer',
   limit: number = 50
 ): Promise<AgentResponse> {
-  const agent = AGENTS[agentType]
-  if (!agent) {
-    return { success: false, error: `Unknown agent type: ${agentType}` }
+  // Build session key for the agent
+  const sessionKey = `agent:${agentType}:${AGENTS[agentType].agentId}`
+  
+  const result = await invokeTool('sessions_history', {
+    sessionKey,
+    limit
+  })
+  
+  if (!result.ok) {
+    return { success: false, error: result.error?.message || 'Failed to get history' }
   }
-
+  
   try {
-    const response = await fetch(
-      `${GATEWAY_URL}/api/sessions/history?agentId=${agent.agentId}&limit=${limit}`
-    )
-
-    if (!response.ok) {
-      const error = await response.text()
-      return { success: false, error: `Gateway error: ${error}` }
-    }
-
-    const data = await response.json()
+    const text = result.result?.content?.[0]?.text || '{}'
+    const data = JSON.parse(text)
     return { success: true, data }
-  } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Failed to fetch history' 
-    }
+  } catch {
+    return { success: false, error: 'Failed to parse history response' }
   }
 }
 
 /**
- * List all active sessions
+ * List available agents
  */
-export async function listSessions(): Promise<AgentResponse> {
+export async function listAgents(): Promise<AgentResponse> {
+  const result = await invokeTool('agents_list', {})
+  
+  if (!result.ok) {
+    return { success: false, error: result.error?.message || 'Failed to list agents' }
+  }
+  
   try {
-    const response = await fetch(`${GATEWAY_URL}/api/sessions/list`)
-
-    if (!response.ok) {
-      const error = await response.text()
-      return { success: false, error: `Gateway error: ${error}` }
-    }
-
-    const data = await response.json()
+    const text = result.result?.content?.[0]?.text || '{}'
+    const data = JSON.parse(text)
     return { success: true, data }
-  } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Failed to list sessions' 
-    }
+  } catch {
+    return { success: false, error: 'Failed to parse agents response' }
   }
 }
 
@@ -147,26 +202,34 @@ export async function listSessions(): Promise<AgentResponse> {
  * Check if OpenClaw Gateway is reachable
  */
 export async function checkGatewayHealth(): Promise<boolean> {
+  if (!GATEWAY_TOKEN) {
+    return false
+  }
+  
   try {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 3000)
     
-    const response = await fetch(`${GATEWAY_URL}/api/health`, {
-      method: 'GET',
-      signal: controller.signal
+    const response = await fetch(`${GATEWAY_URL}/tools/invoke`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GATEWAY_TOKEN}`
+      },
+      body: JSON.stringify({ tool: 'sessions_list', action: 'json', args: {} })
     })
     
     clearTimeout(timeoutId)
-    return response.ok
+    const result = await response.json()
+    return result.ok === true
   } catch {
-    // Gateway is not available - this is fine for demo mode
-    console.warn('OpenClaw Gateway health check failed, running in demo mode')
     return false
   }
 }
 
 /**
  * Create a new task and dispatch to Planner
+ * Note: Uses demo mode since HTTP API doesn't support agent spawning
  */
 export async function createAndDispatchTask(
   requirement: string,
@@ -174,18 +237,20 @@ export async function createAndDispatchTask(
 ): Promise<AgentResponse> {
   const taskId = `TASK-${Date.now()}`
   
-  const message: TaskMessage = {
-    taskId,
-    type: 'new_task',
-    content: `新任务: ${title || '未命名任务'}\n\n需求: ${requirement}`,
-    timestamp: new Date()
+  // In real implementation, this would use sessions_send to contact Planner
+  // For now, return success with demo mode indicator
+  console.warn('[OpenClaw] createAndDispatchTask - using demo mode (sessions_send not available via HTTP)')
+  
+  return {
+    success: true,
+    demo: true,
+    data: { taskId },
+    error: undefined
   }
-
-  return sendToAgent('planner', message)
 }
 
 /**
- * Send progress update from Coder to monitoring dashboard
+ * Update Coder progress
  */
 export async function updateCoderProgress(
   taskId: string,
@@ -193,17 +258,11 @@ export async function updateCoderProgress(
   module: string,
   log: string
 ): Promise<AgentResponse> {
-  const message: TaskMessage = {
-    taskId,
-    type: 'progress_update',
-    content: `进度: ${progress}% | 模块: ${module} | ${log}`,
-    metadata: { progress, module },
-    timestamp: new Date()
+  return {
+    success: true,
+    demo: true,
+    data: { taskId, progress, module, log }
   }
-
-  // This would typically send to a monitoring channel
-  // For now, we just return success as the SSE will handle it
-  return { success: true, message: 'Progress update sent' }
 }
 
 /**
@@ -214,15 +273,11 @@ export async function submitForReview(
   codeSummary: string,
   files: { path: string; content: string }[]
 ): Promise<AgentResponse> {
-  const message: TaskMessage = {
-    taskId,
-    type: 'submit_review',
-    content: `代码审查请求\n\n摘要: ${codeSummary}\n\n文件数: ${files.length}`,
-    metadata: { files: files.map(f => f.path) },
-    timestamp: new Date()
+  return {
+    success: true,
+    demo: true,
+    data: { taskId, summary: codeSummary, fileCount: files.length }
   }
-
-  return sendToAgent('reviewer', message)
 }
 
 /**
@@ -232,15 +287,30 @@ export async function sendReviewFeedback(
   taskId: string,
   issues: { severity: string; location: string; description: string; suggestion: string }[]
 ): Promise<AgentResponse> {
-  const message: TaskMessage = {
-    taskId,
-    type: 'review_feedback',
-    content: issues.length > 0 
-      ? `发现 ${issues.length} 个问题需要修复`
-      : '代码审查通过！',
-    metadata: { issues },
-    timestamp: new Date()
+  return {
+    success: true,
+    demo: true,
+    data: { taskId, issueCount: issues.length }
   }
+}
 
-  return sendToAgent('coder', message)
+/**
+ * Get gateway connection status with details
+ */
+export async function getGatewayStatus(): Promise<{
+  connected: boolean
+  tokenFound: boolean
+  sessions?: unknown[]
+  error?: string
+}> {
+  if (!GATEWAY_TOKEN) {
+    return { connected: false, tokenFound: false, error: 'Gateway token not found' }
+  }
+  
+  const result = await listSessions()
+  if (!result.success) {
+    return { connected: false, tokenFound: true, error: result.error }
+  }
+  
+  return { connected: true, tokenFound: true, sessions: result.data as unknown[] }
 }
