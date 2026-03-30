@@ -44,15 +44,24 @@ export async function sendToAgentViaOpenAI(
       temperature: options.temperature || 0.7
     }
 
+    const debugHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+      'x-session-key': `agent:${agentId.split('_')[0]}:${agentId}`,
+      'x-request-id': `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    }
+    
+    console.log(`[OpenClaw] Request headers:`, debugHeaders)
+    console.log(`[OpenClaw] Request body:`, JSON.stringify({ model: `openclaw:${agentId}`, messages: [{ role: 'user', content: message.slice(0, 50) }] }))
+    
     const response = await fetch(`${GATEWAY_URL}/v1/chat/completions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GATEWAY_TOKEN}`
-      },
+      headers: debugHeaders,
       body: JSON.stringify(request),
       signal: controller.signal
     })
+    
+    console.log(`[OpenClaw] Response status:`, response.status)
 
     clearTimeout(timeoutId)
 
@@ -121,6 +130,9 @@ export async function sendToAgent(
   const agentId = AGENT_IDS[agentType]
   const fullMessage = taskId ? `[Task: ${taskId}]\n\n${message}` : message
   const model = modelMap[agentType]
+
+  // Log for debugging
+  console.log(`[OpenClaw] Sending to agentType=${agentType}, model=${model}, message=${fullMessage.slice(0, 50)}...`)
 
   try {
     const result = await sendToAgentViaOpenAI(model, fullMessage)
