@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { checkGatewayHealth, AGENTS, listSessions, listAgents, getGatewayStatus, getDemoResponse } from '@/lib/server/openclaw'
+import { checkGatewayHealth, AGENTS, listSessions, listAgents, getGatewayStatus } from '@/lib/server/openclaw'
+import { getAgentHistory } from '@/lib/server/openclaw'
 
 // GET /api/openclaw/agent - Get agent status, history, or gateway info
 export async function GET(request: NextRequest) {
@@ -13,19 +14,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ healthy: isHealthy })
   }
   
-  // Get gateway status (includes connection info)
+  // Get gateway status
   if (action === 'status') {
     const status = await getGatewayStatus()
     return NextResponse.json(status)
   }
   
-  // List agents (via Gateway tool)
+  // List agents
   if (action === 'list') {
     const result = await listAgents()
-    return NextResponse.json({
-      ...result,
-      configured: AGENTS
-    })
+    return NextResponse.json({ ...result, configured: AGENTS })
   }
   
   // Get sessions
@@ -36,7 +34,6 @@ export async function GET(request: NextRequest) {
   
   // Get history for specific agent type
   if (action === 'history' && agentType) {
-    const { getAgentHistory } = await import('@/lib/server/openclaw')
     const result = await getAgentHistory(agentType as 'planner' | 'coder' | 'reviewer')
     return NextResponse.json(result)
   }
@@ -50,7 +47,7 @@ export async function GET(request: NextRequest) {
   })
 }
 
-// POST /api/openclaw/agent - Send message to an agent
+// POST /api/openclaw/agent - Send message to an agent via hooks API
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -70,17 +67,15 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Demo mode since HTTP API doesn't support sessions_send
+    // Use hooks API for real agent communication
+    const { sendToAgent } = await import('@/lib/server/hooks')
+    const result = await sendToAgent(agentType, content, taskId)
+    
     return NextResponse.json({
-      success: true,
-      demo: true,
-      data: {
-        id: `msg-${Date.now()}`,
-        agentType,
-        type: 'chat',
-        content: getDemoResponse(agentType),
-        timestamp: new Date().toISOString()
-      }
+      success: result.success,
+      demo: result.demo,
+      data: result.data,
+      error: result.error
     })
   } catch (error) {
     return NextResponse.json(
