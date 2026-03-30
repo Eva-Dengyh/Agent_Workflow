@@ -9,7 +9,7 @@ function getGatewayToken(): string | null {
   try {
     const configPath = path.join(process.env.HOME || '/Users/eva', '.openclaw/openclaw.json')
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-    return config.auth?.token || null
+    return config.gateway?.auth?.token || config.auth?.token || null
   } catch {
     return process.env.OPENCLAW_GATEWAY_TOKEN || null
   }
