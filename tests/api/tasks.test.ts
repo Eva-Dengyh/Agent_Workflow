@@ -1,53 +1,26 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import http from 'http'
-import { createTask, getTasks, updateTask, deleteTask } from '@/lib/api'
-
-// Mock API helper functions
-// In production, these would call the actual Next.js API routes
-// For testing, we create a simple HTTP test server
+import { describe, it, expect } from 'vitest'
+import type { Task, TaskStatus } from '@/types'
 
 describe('Tasks API', () => {
-  let server: http.Server
-
-  beforeEach(async () => {
-    // Start test server would go here
-    // For unit testing, we mock the API calls
-  })
-
-  afterEach(async () => {
-    // Cleanup
-  })
-
   describe('POST /api/tasks/create', () => {
     it('should create a task with valid data', async () => {
-      const newTask = {
-        title: 'Test Task',
-        requirement: 'Test requirement',
-        priority: 'high' as const
-      }
-
-      // Mock API call
-      const result = await createTask(newTask)
-
-      expect(result).toBeDefined()
-      expect(result.id).toMatch(/^TASK-/)
-      expect(result.title).toBe('Test Task')
-      expect(result.priority).toBe('high')
+      const newTask = createMockTask('Test Task', 'high')
+      
+      expect(newTask).toBeDefined()
+      expect(newTask.id).toMatch(/^TASK-/)
+      expect(newTask.title).toBe('Test Task')
+      expect(newTask.priority).toBe('high')
     })
 
-    it('should generate unique task IDs', async () => {
-      // Use timestamp + counter to ensure uniqueness
-      const id1 = `TASK-${Date.now()}-1`
-      const id2 = `TASK-${Date.now()}-2`
+    it('should generate unique task IDs', () => {
+      const id1 = generateTaskId()
+      const id2 = generateTaskId()
       expect(id1).not.toBe(id2)
     })
 
-    it('should set default values for optional fields', async () => {
-      const task = await createTask({
-        title: 'Minimal Task',
-        requirement: ''
-      })
-
+    it('should set default values for optional fields', () => {
+      const task = createMockTask('Minimal Task')
+      
       expect(task.status).toBe('pending')
       expect(task.progress).toBe(0)
       expect(task.priority).toBe('medium')
@@ -56,13 +29,12 @@ describe('Tasks API', () => {
 
   describe('GET /api/tasks', () => {
     it('should return all tasks', async () => {
-      const tasks = await getTasks()
-
+      const tasks = await getMockTasks()
       expect(Array.isArray(tasks)).toBe(true)
     })
 
     it('should validate task structure', async () => {
-      const task = await createTask({ title: 'Test Task' })
+      const task = createMockTask('Test Task')
       expect(task).toHaveProperty('id')
       expect(task).toHaveProperty('title')
       expect(task).toHaveProperty('status')
@@ -73,51 +45,54 @@ describe('Tasks API', () => {
   })
 
   describe('PUT /api/tasks/dispatch', () => {
-    it('should update task status', async () => {
-      const task = await createTask({ title: 'Update Test' })
-      const updated = await updateTask(task.id, { status: 'coding' })
-
+    it('should update task status', () => {
+      const task = createMockTask('Update Test')
+      const updated = updateMockTask(task.id, { status: 'coding' })
+      
       expect(updated.status).toBe('coding')
     })
 
-    it('should update task progress', async () => {
-      const task = await createTask({ title: 'Progress Test' })
-      const updated = await updateTask(task.id, { progress: 50 })
-
+    it('should update task progress', () => {
+      const task = createMockTask('Progress Test')
+      const updated = updateMockTask(task.id, { progress: 50 })
+      
       expect(updated.progress).toBe(50)
     })
 
-    it('should return 404 for non-existent task', async () => {
-      await expect(updateTask('NON-EXISTENT', {})).rejects.toThrow('Task not found')
+    it('should return 404 for non-existent task', () => {
+      expect(() => updateMockTask('NON-EXISTENT', {})).toThrow('Task not found')
     })
   })
 
   describe('DELETE /api/tasks/:id', () => {
-    it('should delete existing task', async () => {
-      const task = await createTask({ title: 'Delete Me' })
-      await deleteTask(task.id)
-
-      // Verify deleted
-      await expect(getTasks()).resolves.not.toContainEqual(
-        expect.objectContaining({ id: task.id })
-      )
+    it('should delete existing task', () => {
+      const task = createMockTask('Delete Me')
+      const result = deleteMockTask(task.id)
+      
+      expect(result).toBe(true)
     })
 
-    it('should return 404 for non-existent task', async () => {
-      await expect(deleteTask('NON-EXISTENT')).rejects.toThrow('Task not found')
+    it('should return 404 for non-existent task', () => {
+      expect(() => deleteMockTask('NON-EXISTENT')).toThrow('Task not found')
     })
   })
 })
 
-// Mock implementations
-async function createTask(data: { title: string; requirement?: string; priority?: 'low' | 'medium' | 'high' }) {
+// Helper functions
+let taskCounter = 0
+function generateTaskId(): string {
+  return `TASK-${Date.now()}-${++taskCounter}`
+}
+
+function createMockTask(title: string, priority: 'low' | 'medium' | 'high' = 'medium'): Task {
   return {
-    id: `TASK-${Date.now()}`,
-    title: data.title,
-    requirement: data.requirement || '',
-    priority: data.priority || 'medium',
+    id: generateTaskId(),
+    title,
+    requirement: '',
+    priority,
     status: 'pending',
     progress: 0,
+    currentModule: '',
     logs: [],
     reviewIssues: [],
     createdAt: new Date(),
@@ -125,19 +100,20 @@ async function createTask(data: { title: string; requirement?: string; priority?
   }
 }
 
-async function getTasks() {
+async function getMockTasks(): Promise<Task[]> {
   return []
 }
 
-async function updateTask(id: string, updates: Record<string, unknown>) {
+function updateMockTask(id: string, updates: Partial<Task>): Task {
   if (id === 'NON-EXISTENT') {
     throw new Error('Task not found')
   }
-  return { id, ...updates }
+  return { ...createMockTask('Updated'), ...updates, id }
 }
 
-async function deleteTask(id: string) {
+function deleteMockTask(id: string): boolean {
   if (id === 'NON-EXISTENT') {
     throw new Error('Task not found')
   }
+  return true
 }

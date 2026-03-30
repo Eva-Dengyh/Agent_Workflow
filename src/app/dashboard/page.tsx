@@ -16,6 +16,7 @@ import {
   NotificationCenter
 } from '@/components'
 import type { Notification } from '@/components/NotificationCenter'
+import { clsx } from 'clsx'
 
 export default function DashboardPage() {
   const { tasks, currentTask, setCurrentTask, filter, setFilter, addLog, updateProgress } = useTaskStore()
@@ -30,8 +31,12 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<'chat' | 'code' | 'review'>('chat')
   
-  // Mock data for demo
+  // Mock data for demo - use ref to prevent duplicate additions
+  const [isInitialized, setIsInitialized] = useState(false)
+  
   useEffect(() => {
+    if (isInitialized) return
+    
     const demoTask: Task = {
       id: 'TASK-2026-001',
       title: '用户认证模块开发',
@@ -72,16 +77,63 @@ export default function DashboardPage() {
       deadline: new Date(Date.now() + 86400000).toISOString()
     }
     
-    if (tasks.length === 0) {
+    // Check if task already exists
+    const existingTasks = useTaskStore.getState().tasks
+    const taskExists = existingTasks.some(t => t.id === demoTask.id)
+    
+    if (!taskExists) {
       useTaskStore.getState().addTask(demoTask)
-      setCurrentTask(demoTask)
+      useTaskStore.getState().setCurrentTask(demoTask)
+      setIsInitialized(true)
+    } else if (!useTaskStore.getState().currentTask) {
+      useTaskStore.getState().setCurrentTask(demoTask)
+      setIsInitialized(true)
+    } else {
+      setIsInitialized(true)
     }
-  }, [])
+  }, [isInitialized])
   
-  // SSE connection simulation
+  // SSE connection - actual EventSource connection
   useEffect(() => {
-    setConnected(true)
-    return () => setConnected(false)
+    let eventSource: EventSource | null = null
+    
+    const connectSSE = () => {
+      try {
+        eventSource = new EventSource('/api/events')
+        
+        eventSource.onopen = () => {
+          setConnected(true)
+        }
+        
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            // Handle SSE events here
+            if (data.type === 'agent_status') {
+              // Update agent statuses from SSE
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+        
+        eventSource.onerror = () => {
+          setConnected(false)
+          // Close and reconnect after delay
+          eventSource?.close()
+          setTimeout(connectSSE, 5000)
+        }
+      } catch (e) {
+        setConnected(false)
+      }
+    }
+    
+    connectSSE()
+    
+    return () => {
+      eventSource?.close()
+      setConnected(false)
+    }
   }, [setConnected])
   
   // Filter tasks
@@ -356,9 +408,4 @@ export default function DashboardPage() {
       </div>
     </div>
   )
-}
-
-// Helper function
-function clsx(...classes: (string | boolean | undefined | null)[]) {
-  return classes.filter(Boolean).join(' ')
 }
