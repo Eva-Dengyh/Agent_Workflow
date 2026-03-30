@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendToAgent, getAgentHistory, listSessions, checkGatewayHealth, AGENTS } from '@/lib/openclaw'
 
+// Demo mode responses when Gateway is unavailable
+const DEMO_RESPONSES: Record<string, string> = {
+  planner: '你好！我是 Planner。我收到你的消息了。有什么需求可以告诉我，我会帮你分析和规划任务。',
+  coder: '你好！我是 Coder。我收到你的消息了。准备好开始开发了。',
+  reviewer: '你好！我是 Reviewer。我收到你的消息了。可以提交代码给我审查。'
+}
+
 // POST /api/openclaw/agent - Send message to an agent
 export async function POST(request: NextRequest) {
   try {
@@ -19,6 +26,28 @@ export async function POST(request: NextRequest) {
         { error: 'Invalid agentType. Must be planner, coder, or reviewer' },
         { status: 400 }
       )
+    }
+    
+    // Check if gateway is available
+    const gatewayAvailable = await checkGatewayHealth()
+    
+    if (!gatewayAvailable) {
+      // Demo mode: simulate agent response
+      console.warn('OpenClaw Gateway not available, using demo mode for agent chat')
+      
+      const demoResponse = DEMO_RESPONSES[agentType] || '消息已收到'
+      
+      return NextResponse.json({
+        success: true,
+        data: {
+          id: `msg-${Date.now()}`,
+          agentType,
+          type: 'chat',
+          content: demoResponse,
+          timestamp: new Date().toISOString()
+        },
+        demo: true
+      })
     }
     
     const result = await sendToAgent(agentType, {

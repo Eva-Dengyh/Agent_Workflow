@@ -190,11 +190,21 @@ export default function DashboardPage() {
       
       // Add agent response if available
       if (data.success && data.data) {
+        // Extract content from various possible response formats
+        let responseContent = ''
+        if (typeof data.data === 'string') {
+          responseContent = data.data
+        } else if (typeof data.data === 'object' && data.data !== null) {
+          responseContent = data.data.content || JSON.stringify(data.data)
+        } else {
+          responseContent = String(data.data)
+        }
+        
         const agentMsg: AgentMessage = {
           id: (Date.now() + 1).toString(),
           agentType: 'planner',
           type: 'chat',
-          content: typeof data.data === 'string' ? data.data : JSON.stringify(data.data),
+          content: responseContent,
           timestamp: new Date()
         }
         
@@ -202,6 +212,23 @@ export default function DashboardPage() {
           ...prev,
           [currentTask.id]: [...(prev[currentTask.id] || []), agentMsg]
         }))
+        
+        // Add demo mode indicator
+        if (data.demo) {
+          const demoNote: AgentMessage = {
+            id: (Date.now() + 2).toString(),
+            agentType: 'planner',
+            type: 'chat',
+            content: '💡 (演示模式 - OpenClaw Gateway 未连接)',
+            timestamp: new Date()
+          }
+          setTimeout(() => {
+            setMessages(prev => ({
+              ...prev,
+              [currentTask.id]: [...(prev[currentTask.id] || []), demoNote]
+            }))
+          }, 100)
+        }
       } else {
         // Add error message
         const errorMsg: AgentMessage = {
