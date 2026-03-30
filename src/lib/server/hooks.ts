@@ -111,11 +111,11 @@ export async function sendToAgent(
     reviewer: process.env.REVIEWER_AGENT_ID || 'reviewer_code_agent_bot'
   }
 
-  // Model format: openclaw:<exact-agent-id>
+  // Model format: openclaw:<short-id> (these have proper workspace configuration)
   const modelMap = {
-    planner: 'openclaw:planner_code_agent_bot',
-    coder: 'openclaw:coder_code_agent_bot',
-    reviewer: 'openclaw:reviewer_code_agent_bot'
+    planner: 'openclaw:planner',
+    coder: 'openclaw:coder',
+    reviewer: 'openclaw:reviewer'
   }
 
   const agentId = AGENT_IDS[agentType]
