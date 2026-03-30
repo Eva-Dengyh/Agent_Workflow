@@ -58,6 +58,7 @@ export function AgentChat({ agentType, agentName, messages, onSendMessage, isLoa
           <div className="text-center text-gray-400 py-8">
             <p className="text-2xl mb-2">{agentAvatars[agentType]}</p>
             <p>开始和 {agentName} 对话吧</p>
+            <p className="text-sm mt-2">你是 {agentName}，有什么需要帮忙的？</p>
           </div>
         ) : (
           messages.map((msg, index) => (

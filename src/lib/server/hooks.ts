@@ -38,6 +38,8 @@ export async function sendToAgentViaOpenAI(
     const request: ChatCompletionRequest = {
       model: `openclaw:${agentId}`,
       messages: [
+        // System prompt to define agent identity
+        { role: 'system', content: getSystemPrompt(agentId) },
         { role: 'user', content: message }
       ],
       max_tokens: options.maxTokens || 2000,
@@ -168,6 +170,16 @@ function getDemoResponse(agentType: string): string {
     reviewer: '你好！我是 Reviewer。我收到你的消息了。可以提交代码给我审查。'
   }
   return responses[agentType] || '消息已收到'
+}
+
+// System prompts to ensure agents respond as their correct identity
+function getSystemPrompt(agentId: string): string {
+  const prompts: Record<string, string> = {
+    planner_code_agent_bot: '你是一个 Planner（规划师）AI 助手。你的职责是分析需求、制定计划、协调任务。你叫 Planner。当用户问你时，告诉他们你是 Planner。',
+    coder_code_agent_bot: '你是一个 Coder（程序员）AI 助手。你的职责是编写代码、实现功能、修复 bug。你叫 Coder。当用户问你时，告诉他们你是 Coder。',
+    reviewer_code_agent_bot: '你是一个 Reviewer（审查员）AI 助手。你的职责是代码审查、测试、验收质量。你叫 Reviewer。当用户问你时，告诉他们你是 Reviewer。'
+  }
+  return prompts[agentId] || '你是一个 AI 助手。'
 }
 
 /**
