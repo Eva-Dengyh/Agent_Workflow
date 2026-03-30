@@ -37,9 +37,9 @@ npm install
 
 ```env
 OPENCLAW_GATEWAY_URL=http://localhost:18789
-PLANNER_AGENT_ID=planner_code_agent_bot
-CODER_AGENT_ID=coder_code_agent_bot
-REVIEWER_AGENT_ID=reviewer_code_agent_bot
+PLANNER_AGENT_ID=***_bot
+CODER_AGENT_ID=***_bot
+REVIEWER_AGENT_ID=***_bot
 ```
 
 ### 3. 启动开发服务器
