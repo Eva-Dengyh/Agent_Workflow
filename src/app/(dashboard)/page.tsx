@@ -141,16 +141,17 @@ export default function DashboardPage() {
     {
       type: 'directory',
       name: 'src',
+      path: 'src',
       status: 'in_progress',
       children: [
-        { type: 'directory', name: 'app', status: 'in_progress', children: [
-          { type: 'directory', name: 'api', status: 'in_progress', children: [
+        { type: 'directory', name: 'app', path: 'src/app', status: 'in_progress', children: [
+          { type: 'directory', name: 'api', path: 'src/app/api', status: 'in_progress', children: [
             { type: 'file', name: 'auth.ts', status: 'in_progress', path: 'src/app/api/auth.ts' },
             { type: 'file', name: 'tasks.ts', status: 'pending', path: 'src/app/api/tasks.ts' }
           ]},
           { type: 'file', name: 'page.tsx', status: 'completed', path: 'src/app/page.tsx' }
         ]},
-        { type: 'directory', name: 'lib', status: 'in_progress', children: [
+        { type: 'directory', name: 'lib', path: 'src/lib', status: 'in_progress', children: [
           { type: 'file', name: 'auth.ts', status: 'in_progress', path: 'src/lib/auth.ts' },
           { type: 'file', name: 'types.ts', status: 'completed', path: 'src/lib/types.ts' }
         ]}
