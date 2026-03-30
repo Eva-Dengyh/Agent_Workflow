@@ -17,7 +17,7 @@ interface ChatCompletionRequest {
  * NOTE: This endpoint requires longer timeout (10+ seconds) as it invokes real AI agent
  */
 export async function sendToAgentViaOpenAI(
-  agentId: string,
+  agentId: string, // Can be short id like 'reviewer' or full 'openclaw:reviewer'
   message: string,
   options: { maxTokens?: number; temperature?: number; timeoutMs?: number } = {}
 ): Promise<{
@@ -31,12 +31,19 @@ export async function sendToAgentViaOpenAI(
 
   const timeoutMs = options.timeoutMs || 30000 // Default 30 second timeout for AI response
 
+  // Normalize agentId - extract short id and build session key
+  const shortId = agentId.includes(':') ? agentId.split(':')[1] : agentId.split('_')[0]
+  const sessionKey = `agent:${shortId}:${agentId}`
+  
+  // Normalize model - ensure it has openclaw: prefix
+  const model = agentId.startsWith('openclaw:') ? agentId : `openclaw:${agentId}`
+
   try {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
     const request: ChatCompletionRequest = {
-      model: `openclaw:${agentId}`,
+      model: model,
       messages: [
         { role: 'user', content: message }
       ],
@@ -47,12 +54,11 @@ export async function sendToAgentViaOpenAI(
     const debugHeaders = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${GATEWAY_TOKEN}`,
-      'x-session-key': `agent:${agentId.split('_')[0]}:${agentId}`,
+      'x-session-key': sessionKey,
       'x-request-id': `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     }
     
-    console.log(`[OpenClaw] Request headers:`, debugHeaders)
-    console.log(`[OpenClaw] Request body:`, JSON.stringify({ model: `openclaw:${agentId}`, messages: [{ role: 'user', content: message.slice(0, 50) }] }))
+    console.log(`[OpenClaw] x-session-key: ${sessionKey}, model: ${model}`)
     
     const response = await fetch(`${GATEWAY_URL}/v1/chat/completions`, {
       method: 'POST',
@@ -130,12 +136,13 @@ export async function sendToAgent(
   const agentId = AGENT_IDS[agentType]
   const fullMessage = taskId ? `[Task: ${taskId}]\n\n${message}` : message
   const model = modelMap[agentType]
+  const shortId = agentType // Use agentType as short ID (planner, coder, reviewer)
 
   // Log for debugging
-  console.log(`[OpenClaw] Sending to agentType=${agentType}, model=${model}, message=${fullMessage.slice(0, 50)}...`)
+  console.log(`[OpenClaw] agentType=${agentType}, shortId=${shortId}, model=${model}`)
 
   try {
-    const result = await sendToAgentViaOpenAI(model, fullMessage)
+    const result = await sendToAgentViaOpenAI(shortId, fullMessage)
 
     if (result.success && result.response) {
       return {
